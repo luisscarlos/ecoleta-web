@@ -1,10 +1,11 @@
-// 1:42
+// 2:06
 
-import React, { useState, useEffect, ChangeEvent } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useState, useEffect, ChangeEvent, FormEvent } from 'react';
+import { Link, useHistory } from 'react-router-dom';
 import { FiArrowLeft } from 'react-icons/fi';
 import { Map, TileLayer, Marker } from 'react-leaflet';
 import axios from 'axios';
+import { LeafletMouseEvent } from 'leaflet';
 import api from '../../services/api';
 
 import './styles.css';
@@ -30,7 +31,30 @@ const CreatePoint = () => {
   const [ufs, setUfs] = useState<string[]>([]);
   const [cities, setCities] = useState<string[]>([]);
 
+  const [initialPosition, setInitialPosition] = useState<[number, number]>([0, 0]);
+
+  const [formData, setFormData] = useState({
+    name: '',
+    email: '',
+    whatsapp: '',
+  });
+
   const [selectedUf, setSelectedUf] = useState('0');
+  const [selectedCity, setSelectedCity] = useState('0');
+  const [selectedItems, setSelectedItems] = useState<number[]>([]);
+  const [selectedPosition, setSelectedPosition] = useState<[number, number]>([0, 0]);
+
+  const history = useHistory();
+
+  // Usado para coletar a localização atual do usuário ao abrir a página
+  useEffect(() => {
+    // A variável navigator é global, sem necessidade de importar
+    navigator.geolocation.getCurrentPosition(position => {
+      const { latitude, longitude } = position.coords;
+      console.log(position);
+      setInitialPosition([latitude, longitude]);
+    });
+  }, []);
 
   // Buscando dados da nossa API
   useEffect(() => {
@@ -70,6 +94,70 @@ const CreatePoint = () => {
     setSelectedUf(uf);
   }
 
+  // Coleta o estado selecionado
+  function handleSelectCity(event: ChangeEvent<HTMLSelectElement>) {
+    const city = event.target.value;
+
+    setSelectedCity(city);
+  }
+
+  // Coleta o ponto clicado no mapa
+  function handleMapClick(event: LeafletMouseEvent) {
+    setSelectedPosition([
+      event.latlng.lat,
+      event.latlng.lng,
+    ]);
+  }
+
+  // Coleta os dados dos inputs de texto(Nome, email, Whatsapp)
+  function handleInputChange(event: ChangeEvent<HTMLInputElement>) {
+    const { name, value } = event.target;
+
+    setFormData({ ...formData, [name]: value });
+  }
+
+  // Salva o item de coleta selecionado
+  function handleSelectItem(id: number){
+    const alreadySelected = selectedItems.findIndex(item => item === id);
+
+    if (alreadySelected >= 0) {
+      const filteredItems = selectedItems.filter(item => item !== id);
+
+      setSelectedItems(filteredItems);
+    } else {
+      setSelectedItems([...selectedItems, id]);
+    }
+  }
+
+  // Envia os dados para o backend
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+  
+    const { name, email, whatsapp } = formData;
+    const uf = selectedUf;
+    const city = selectedCity;
+    const [latitude, longitude] = selectedPosition;
+    const items = selectedItems;
+
+    const data = {
+      name,
+      email,
+      whatsapp,
+      uf,
+      city,
+      latitude,
+      longitude,
+      items,
+    }
+
+    // Chamada da API para salvar data na tabela points
+    await api.post('points', data);
+
+    alert('Ponto de coleta criado!');
+
+    history.push('/');
+  }
+
   return (
     <div id="page-create-point">
       <header>
@@ -81,7 +169,7 @@ const CreatePoint = () => {
         </Link>
       </header>
 
-      <form>
+      <form onSubmit={handleSubmit}>
         <h1>Cadastro do <br /> ponto de coleta</h1>
 
         <fieldset>
@@ -95,6 +183,7 @@ const CreatePoint = () => {
               type="text"
               name="name"
               id="name"
+              onChange={handleInputChange}
             />
           </div>
 
@@ -105,6 +194,7 @@ const CreatePoint = () => {
                 type="email"
                 name="email"
                 id="email"
+                onChange={handleInputChange}
               />
             </div>
 
@@ -114,6 +204,7 @@ const CreatePoint = () => {
                 type="text"
                 name="whatsapp"
                 id="whatsapp"
+                onChange={handleInputChange}
               />
             </div>
           </div>
@@ -125,14 +216,15 @@ const CreatePoint = () => {
             <span>Selecione o endereço no mapa</span>
           </legend>
 
-          {/* MAPA LEAFLET */}
-          <Map center={[-3.7440853, -38.4955035]} zoom={15}> {/* latitude e longitude */}
+          {/* MAPA LEAFLET  latitude e longitude */} 
+          <Map center={initialPosition} zoom={15} onclick={handleMapClick}>
             <TileLayer
               attribution='&amp;copy <a href="http://osm.org/copyright">OpenStreetMap</a> contributors'
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             /> {/* Layout do mapa, no caso gratuito */}
 
-            <Marker position={[-3.7440853, -38.4955035]} /> {/* pin no mapa */}
+            {/* ponto clicado no mapa */}
+            <Marker position={selectedPosition} /> 
           </Map>
 
           <div className="field-group">
@@ -152,7 +244,12 @@ const CreatePoint = () => {
               </div>
               <div className="field">
                 <label htmlFor="city">Cidade</label>
-                <select name="city" id="city">
+                <select 
+                  name="city" 
+                  id="city"
+                  value={selectedCity}
+                  onChange={handleSelectCity}
+                >
                   <option value="0">Selecione uma cidade</option>
                   {cities.map(city => (
                     <option key={city} value={city}>{city}</option>
@@ -170,7 +267,11 @@ const CreatePoint = () => {
 
           <ul className="items-grid">
             {items.map(item => (
-              <li key={item.id}>
+              <li 
+                key={item.id} 
+                onClick={() => handleSelectItem(item.id)}
+                className={selectedItems.includes(item.id) ? 'selected' : ''}
+              >
                 <img src={item.image_url} alt={item.title}/>
                 <span>{item.title}</span>
               </li>
